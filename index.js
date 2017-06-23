@@ -1,60 +1,59 @@
 const chokidar = require('chokidar')
-const EI = require('elastic-import')
 const parse = require('csv-parse')
+const firstline = require('firstline')
 const fs = require('fs')
+const transform = require('stream-transform')
+const path = require('path')
+const Sequelize = require('sequelize')
 
-const importer = new EI({
-  host: '192.168.10.251:9200',
-  index: 'esdat',
-  type: 'record',
-  log: 'info',
-  warnErrors: false,
-  transform: function (record) {
-    record.MATRIX_TYPE = 'I BEEN TRANSFORMED!'
-  }
+const dbstring = 'mysql://root:MPJzfq97@localhost:3306/water_resources'
+
+const parseOpts = {
+  columns: true,
+  skip_empty_lines: true,
+  from: 1
+}
+const parser = () => parse(parseOpts, (err, data) => {
+  if (err) return
 })
 
-function parser() {
-  return parse({
-    delimiter: ',',
-    quote: '',
-    columns: true,
-    skip_empty_lines: true,
-    auto_parse: false,
-    auto_parse_date: false 
-  }, function (err, data) {
-    if (err) {
-      console.log(err)
-    }
-
-    if (data.length < 1000) {
-      importer.import(data)
-    } else {
-      while (true) {
-        if (data.length === 0) {
-          break
-        }
-
-        var partial = data.splice(0, 1000)
-        importer.import(partial)
-        console.log('sent', partial.length)
-      }
-    }
-  })
-}
-
-const watcher = chokidar.watch(process.cwd(), {
+const watchOpts = {
   persistent: true,
   ignoreInitial: true,
   awaitWriteFinish: {
     stabilityThreshold: 2000,
     pollInterval: 100
   }
-})
+}
+const watcher = chokidar.watch(process.cwd(), watchOpts)
 
-const log = console.log.bind(console)
+watcher.on('add', file => {
+  let f = path.parse(file)
+  if (f.ext != '.csv') return
+  let name = f.name
 
-watcher.on('add', path => {
-  importer.type = require('path').parse(path).name
-  fs.createReadStream(path).pipe(parser())
+  let sequelize = new Sequelize(dbstring, { logging: false })
+
+  firstline(file).then(headers => {
+    let schema = {}
+    let count = 0
+    headers.split(',').forEach(k => schema[k.replace(/\W/g,'')] = { type: Sequelize.STRING })
+
+    let table = sequelize.define(name, schema, { tableName: name })
+    let transformer = transform((data, callback) => {
+      table.create(data) && count++
+      callback(null, data)
+    }, { consume: true })
+
+    table.sync().then(() => {
+      fs.createReadStream(file)
+        .pipe(parser())
+        .pipe(transformer)
+    })
+
+    transformer.on('end', () => {
+      console.log(`Ingested ${count} records`) 
+      sequelize.close()
+    })
+  })
 })
