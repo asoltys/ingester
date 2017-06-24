@@ -5,6 +5,9 @@ const fs = require('fs')
 const transform = require('stream-transform')
 const path = require('path')
 const Sequelize = require('sequelize')
+const deepstream = require('deepstream.io-client-js')
+const client = deepstream('localhost:6020').login()
+const list = client.record.getList('samples')
 
 const dbstring = 'mysql://root:MPJzfq97@localhost:3306/water_resources'
 
@@ -41,6 +44,10 @@ watcher.on('add', file => {
 
     let table = sequelize.define(name, schema, { tableName: name })
     let transformer = transform((data, callback) => {
+      let record = client.record.getRecord(data.ChemCode)
+      record.set(data)
+      list.addEntry(data.ChemCode)
+
       table.create(data) && count++
       callback(null, data)
     }, { consume: true })

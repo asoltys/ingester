@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/deepstream.io-client-js/2.1.4/deepstream.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.4/lodash.min.js"></script>
+    <style>
+      font-family: Roboto;
+      font-size: 60px;
+    </style>
+  </head>
+  <body>
+    <div id="results"></div>
+    <script type="text/javascript">
+      var client = deepstream('localhost:6020').login()
+      var div = document.querySelector('#results')
+      var list = client.record.getList('samples')
+      var results = []
+
+      list.subscribe(function(samples) {
+        let count = 0
+        samples.forEach((e) =>{
+          count++
+          let record = client.record.getRecord(e) 
+          record.whenReady((r) => { 
+            results.push(r.get())
+          })
+        })
+      })
+
+window.onload = function start() {
+  poll()
+}
+
+function poll() {
+  setInterval(() => {
+    console.log('hey')
+    if (results.length > 0) {
+      div.innerHTML += JSON.stringify(results.pop())
+    }
+  }, 50)
+}
+    </script>
+  </body>
+</html>
